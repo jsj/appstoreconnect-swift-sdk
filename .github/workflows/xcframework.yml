@@ -1,0 +1,81 @@
+name: Build XCFramework
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag for the XCFramework
+        required: true
+        default: xcframework-4.4.2-jsj.1
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build distribution XCFramework
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build universal macOS framework
+        run: |
+          xcodebuild \
+            -scheme AppStoreConnect-Swift-SDK \
+            -destination "generic/platform=macOS" \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Create and verify XCFramework
+        run: |
+          framework="$RUNNER_TEMP/DerivedData/Build/Products/Release/PackageFrameworks/AppStoreConnect_Swift_SDK.framework"
+          output="$RUNNER_TEMP/AppStoreConnect_Swift_SDK.xcframework"
+
+          test -d "$framework"
+          xcodebuild -create-xcframework -framework "$framework" -output "$output"
+
+          binary="$output/macos-arm64_x86_64/AppStoreConnect_Swift_SDK.framework/AppStoreConnect_Swift_SDK"
+          architectures="$(lipo -archs "$binary")"
+          [[ "$architectures" == *arm64* ]]
+          [[ "$architectures" == *x86_64* ]]
+
+          interface_count="$(find "$output" -name '*.swiftinterface' | wc -l | tr -d ' ')"
+          [[ "$interface_count" -ge 2 ]]
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$output" \
+            "$RUNNER_TEMP/AppStoreConnect-Swift-SDK.xcframework.zip"
+          shasum -a 256 "$RUNNER_TEMP/AppStoreConnect-Swift-SDK.xcframework.zip" | tee "$RUNNER_TEMP/checksum.txt"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppStoreConnect-Swift-SDK.xcframework
+          path: |
+            ${{ runner.temp }}/AppStoreConnect-Swift-SDK.xcframework.zip
+            ${{ runner.temp }}/checksum.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          asset="$RUNNER_TEMP/AppStoreConnect-Swift-SDK.xcframework.zip"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$asset" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$asset" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes "A distribution-compatible macOS XCFramework for AppStoreConnect-Swift-SDK 4.4.2."
+          fi

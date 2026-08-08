@@ -38,10 +38,44 @@ jobs:
 
       - name: Create and verify XCFramework
         run: |
-          framework="$RUNNER_TEMP/DerivedData/Build/Products/Release/PackageFrameworks/AppStoreConnect_Swift_SDK.framework"
+          products="$RUNNER_TEMP/DerivedData/Build/Products/Release"
+          framework="$RUNNER_TEMP/AppStoreConnect_Swift_SDK.framework"
           output="$RUNNER_TEMP/AppStoreConnect_Swift_SDK.xcframework"
 
-          test -d "$framework"
+          test -f "$products/AppStoreConnect_Swift_SDK.o"
+          test -d "$products/AppStoreConnect_Swift_SDK.swiftmodule"
+
+          mkdir -p "$framework/Versions/A/Headers"
+          mkdir -p "$framework/Versions/A/Modules"
+          mkdir -p "$framework/Versions/A/Resources"
+          libtool -static \
+            -o "$framework/Versions/A/AppStoreConnect_Swift_SDK" \
+            "$products/AppStoreConnect_Swift_SDK.o"
+          cp -R \
+            "$products/AppStoreConnect_Swift_SDK.swiftmodule" \
+            "$framework/Versions/A/Modules/"
+
+          header="$(find "$RUNNER_TEMP/DerivedData/Build/Intermediates.noindex" -name 'AppStoreConnect-Swift-SDK-Swift.h' | head -1)"
+          test -f "$header"
+          cp "$header" "$framework/Versions/A/Headers/AppStoreConnect_Swift_SDK-Swift.h"
+
+          plist="$framework/Versions/A/Resources/Info.plist"
+          plutil -create xml1 "$plist"
+          plutil -insert CFBundleExecutable -string AppStoreConnect_Swift_SDK "$plist"
+          plutil -insert CFBundleIdentifier -string com.jsj.AppStoreConnect-Swift-SDK "$plist"
+          plutil -insert CFBundleInfoDictionaryVersion -string 6.0 "$plist"
+          plutil -insert CFBundleName -string AppStoreConnect_Swift_SDK "$plist"
+          plutil -insert CFBundlePackageType -string FMWK "$plist"
+          plutil -insert CFBundleShortVersionString -string 4.4.2 "$plist"
+          plutil -insert CFBundleVersion -string 1 "$plist"
+          plutil -insert LSMinimumSystemVersion -string 11.0 "$plist"
+
+          ln -s A "$framework/Versions/Current"
+          ln -s Versions/Current/AppStoreConnect_Swift_SDK "$framework/AppStoreConnect_Swift_SDK"
+          ln -s Versions/Current/Headers "$framework/Headers"
+          ln -s Versions/Current/Modules "$framework/Modules"
+          ln -s Versions/Current/Resources "$framework/Resources"
+
           xcodebuild -create-xcframework -framework "$framework" -output "$output"
 
           binary="$output/macos-arm64_x86_64/AppStoreConnect_Swift_SDK.framework/AppStoreConnect_Swift_SDK"

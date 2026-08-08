@@ -22,6 +22,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/DerivedData
+          key: xcframework-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Sources/**/*.swift') }}
+
       - name: Build universal macOS framework
         run: |
           xcodebuild \
@@ -42,15 +48,24 @@ jobs:
           framework="$RUNNER_TEMP/AppStoreConnect_Swift_SDK.framework"
           output="$RUNNER_TEMP/AppStoreConnect_Swift_SDK.xcframework"
 
-          test -f "$products/AppStoreConnect_Swift_SDK.o"
           test -d "$products/AppStoreConnect_Swift_SDK.swiftmodule"
+
+          objects="$RUNNER_TEMP/DerivedData/Build/Intermediates.noindex/AppStoreConnect-Swift-SDK.build/Release/AppStoreConnect-Swift-SDK.build/Objects-normal"
+          test -d "$objects/arm64"
+          test -d "$objects/x86_64"
+          find "$objects/arm64" -name '*.o' -print0 | xargs -0 libtool -static -o "$RUNNER_TEMP/AppStoreConnect_Swift_SDK-arm64.a"
+          find "$objects/x86_64" -name '*.o' -print0 | xargs -0 libtool -static -o "$RUNNER_TEMP/AppStoreConnect_Swift_SDK-x86_64.a"
+          lipo -create \
+            "$RUNNER_TEMP/AppStoreConnect_Swift_SDK-arm64.a" \
+            "$RUNNER_TEMP/AppStoreConnect_Swift_SDK-x86_64.a" \
+            -output "$RUNNER_TEMP/AppStoreConnect_Swift_SDK.a"
 
           mkdir -p "$framework/Versions/A/Headers"
           mkdir -p "$framework/Versions/A/Modules"
           mkdir -p "$framework/Versions/A/Resources"
-          libtool -static \
-            -o "$framework/Versions/A/AppStoreConnect_Swift_SDK" \
-            "$products/AppStoreConnect_Swift_SDK.o"
+          cp \
+            "$RUNNER_TEMP/AppStoreConnect_Swift_SDK.a" \
+            "$framework/Versions/A/AppStoreConnect_Swift_SDK"
           cp -R \
             "$products/AppStoreConnect_Swift_SDK.swiftmodule" \
             "$framework/Versions/A/Modules/"

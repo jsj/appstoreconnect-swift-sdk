@@ -15,10 +15,9 @@ on:
 
 jobs:
   diff_spec:
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, mac-mini]
     steps:
       - uses: actions/checkout@v2
       - run: ./check_for_updates.sh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
